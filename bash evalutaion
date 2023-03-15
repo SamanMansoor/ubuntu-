@@ -1,0 +1,71 @@
+  GNU nano 6.2                                                                     task.sh *                                                                            #!/bin/bash
+
+# Function to backup modified file
+function backup_file {
+    backup_dir=$1
+    file_name=$2
+    timestamp=$(date +"%Y%m%d_%H%M%S")
+    cp $file_name $backup_dir/${file_name##*/}_$timestamp
+}
+
+# Function to modify file
+function modify_file {
+    file_name=$1
+    search_string=$2
+    replace_string=$3
+
+    # Check if search string is present in file
+    if grep -q $search_string $file_name; then
+        # Extract specific values from the line containing the search string
+        specific_values=$(grep $search_string $file_name | awk '{print $1 " " $3}')
+
+        # Backup original file
+        backup_file backup $file_name
+
+        # Replace search string with new value
+        sed -i "s/$search_string/$replace_string/g" $file_name
+
+        # If file contains more than 10 lines, extract first and last 5 lines to a separate file
+        line_count=$(wc -l < $file_name)
+        if [ $line_count -gt 10 ]; then
+            head -5 $file_name > ${file_name}_head
+            tail -5 $file_name > ${file_name}_tail
+        fi
+
+        echo "Modified file: $file_name"
+        echo "Specific values: $specific_values"
+    fi
+}
+
+# Prompt user for directory path to monitor
+read -p "Enter directory path to monitor: " dir_path
+
+# Prompt user for regular expression pattern to match file names
+read -p "Enter regular expression pattern to match file names: " pattern
+
+# Validate regular expression pattern
+if ! [[ $pattern =~ $pattern ]]; then
+    echo "Invalid regular expression pattern"
+    exit 1
+fi
+
+# Prompt user for search string
+read -p "Enter search string: " search_string
+
+# Prompt user for replace string
+read -p "Enter replace string: " replace_string
+
+# Create backup directory if it does not exist
+backup_dir="backup"
+if [ ! -d "$backup_dir" ]; then
+    mkdir $backup_dir
+fi
+
+# Monitor directory for changes using inotifywait
+inotifywait -m -r -e modify,create,delete $dir_path --exclude ".*" --exclude "$backup_dir" |
+    while read path action file; do
+        if [[ "$file" =~ $pattern ]]; then
+            file_path="$path$file"
+            modify_file $file_path $search_string $replace_string
+        fi
+    done
